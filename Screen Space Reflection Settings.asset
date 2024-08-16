@@ -12,12 +12,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 30369b8245cc3f840832c23fcf73be90, type: 3}
   m_Name: Screen Space Reflection Settings
   m_EditorClassIdentifier: 
-  depthPyramidCS: {fileID: 0}
-  screenSpaceReflectionsCS: {fileID: 0}
+  depthPyramidCS: {fileID: 7200000, guid: f16d03b7874a24f418713cda8a6ca007, type: 3}
+  screenSpaceReflectionsCS: {fileID: 7200000, guid: f0f28b04d94cb664398e3e0cac4dc8a6,
+    type: 3}
   enabled: 1
-  minSmoothness: 0.9
+  minSmoothness: 0.5
   smoothnessFadeStart: 0.9
   reflectSky: 1
   objectThickness: 0.01
-  screenFadeDistance: 0.1
-  rayMaxIterations: 128
+  screenFadeDistance: 0.5
+  rayMaxIterations: 512

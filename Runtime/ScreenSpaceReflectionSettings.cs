@@ -34,7 +34,7 @@ namespace UniversalScreenSpaceReflection
         /// </summary>
         [Range(0.0f, 1.0f)] public float screenFadeDistance = 0.1f;
 
-        [Range(0, 1024)] public int rayMaxIterations = 128;
+        [Range(0, 512)] public int rayMaxIterations = 128;
 
     }
 }

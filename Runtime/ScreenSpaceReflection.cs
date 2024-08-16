@@ -8,6 +8,7 @@ namespace UniversalScreenSpaceReflection
     public class ScreenSpaceReflection : ScriptableRendererFeature
     {
         public ScreenSpaceReflectionSettings settings;
+        public RenderingMode renderingPath;
         private ScreenSpaceReflectionPass m_Pass;
 
         /// <inheritdoc/>
@@ -15,7 +16,7 @@ namespace UniversalScreenSpaceReflection
         {
             m_Pass = new ScreenSpaceReflectionPass();
             m_Pass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
-            m_Pass.Setup(settings);
+            m_Pass.Setup(settings, renderingPath);
         }
 
         public override void SetupRenderPasses(ScriptableRenderer renderer, in RenderingData renderingData)
@@ -70,7 +71,7 @@ namespace UniversalScreenSpaceReflection
                 return true;
             }
 
-            public void Setup(ScreenSpaceReflectionSettings settings)
+            public void Setup(ScreenSpaceReflectionSettings settings, RenderingMode renderingMode)
             {
                 if (settings == null || settings.depthPyramidCS == null || settings.screenSpaceReflectionsCS == null)
                     return;
@@ -80,23 +81,7 @@ namespace UniversalScreenSpaceReflection
                     return;
                     
                 m_PassData.settings = settings;
-                var urpAsset = (UniversalRenderPipelineAsset)GraphicsSettings.currentRenderPipeline;
-                if (urpAsset)
-                {
-                    var propertyInfo = urpAsset.GetType().GetField("m_RendererDataList", BindingFlags.Instance | BindingFlags.NonPublic);
-                    if (propertyInfo != null)
-                    {
-                        var universalRendererDatas = propertyInfo.GetValue(urpAsset) as UniversalRendererData[];
-                        if (universalRendererDatas != null && universalRendererDatas.Length > 0)
-                        {
-                            var universalRendererData = universalRendererDatas[0];
-                            if (universalRendererData)
-                            {
-                                m_RenderingMode = universalRendererData.renderingMode;
-                            }
-                        }
-                    }
-                }
+                m_RenderingMode = renderingMode;
                 m_DepthBufferMipChainInfo.Allocate();
                 m_MipGenerator = new MipGenerator(settings.depthPyramidCS);
             }
@@ -200,56 +185,54 @@ namespace UniversalScreenSpaceReflection
 
             private static void ExecutePass(CommandBuffer cmd, PassData data)
             {
+                var cs = data.settings.screenSpaceReflectionsCS;
+                if (cs == null)
+                    return;
+
                 using (new ProfilingScope(cmd, new ProfilingSampler("Depth Pyramid")))
                 {
                     data.mipGenerator.RenderMinDepthPyramid(cmd, data.depthTexture, data.mipInfo, false);
                 }
                 
+                var deferredKeyword = new LocalKeyword(cs, "SSR_DEFERRED");
+
                 using (new ProfilingScope(cmd, new ProfilingSampler("SSR Tracing")))
                 {
-                    var cs = data.settings.screenSpaceReflectionsCS;
-                    if (cs != null)
-                    {
-                        // Set keyword to use different normal texture based on rendering mode.
-                        cmd.SetKeyword(cs, new LocalKeyword(cs, "SSR_DEFERRED"), data.renderingMode == RenderingMode.Deferred);
+                    // Set keyword to use different normal texture based on rendering mode.
+                    cmd.SetKeyword(cs, deferredKeyword, data.renderingMode == RenderingMode.Deferred);
 
-                        cmd.SetComputeTextureParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidTexture, data.depthTexture);
-                        cmd.SetComputeTextureParam(cs, data.tracingKernel, ShaderIDs._SsrHitPointTexture, data.hitPointsTexture);
+                    cmd.SetComputeTextureParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidTexture, data.depthTexture);
+                    cmd.SetComputeTextureParam(cs, data.tracingKernel, ShaderIDs._SsrHitPointTexture, data.hitPointsTexture);
 
-                        cmd.SetComputeBufferParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
+                    cmd.SetComputeBufferParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
 
-                        ConstantBuffer.Push(cmd, data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
+                    ConstantBuffer.Push(cmd, data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
 
-                        cmd.DispatchCompute(cs, data.tracingKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
-                    }
+                    cmd.DispatchCompute(cs, data.tracingKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
                 }
 
                 using (new ProfilingScope(cmd, new ProfilingSampler("SSR Reprojection")))
                 {
-                    var cs = data.settings.screenSpaceReflectionsCS;
-                    if (cs != null)
-                    {
-                        // Set keyword to use different normal texture based on rendering mode.
-                        cmd.SetKeyword(cs, new LocalKeyword(cs, "SSR_DEFERRED"), data.renderingMode == RenderingMode.Deferred);
+                    // Set keyword to use different normal texture based on rendering mode.
+                    cmd.SetKeyword(cs, deferredKeyword, data.renderingMode == RenderingMode.Deferred);
 
-                        // Create color mip chain
-                        cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CameraColorTexture, data.cameraColorTargetHandle);
-                        cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CopiedColorPyramidTexture, data.colorTexture);
-                        cmd.DispatchCompute(cs, data.copyColorKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
-                        cmd.GenerateMips(data.colorTexture);
+                    // Create color mip chain
+                    cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CameraColorTexture, data.cameraColorTargetHandle);
+                    cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CopiedColorPyramidTexture, data.colorTexture);
+                    cmd.DispatchCompute(cs, data.copyColorKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
+                    cmd.GenerateMips(data.colorTexture);
 
-                        // Bind resources
-                        cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidTexture, data.depthTexture);
-                        cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._ColorPyramidTexture, data.colorTexture);
-                        cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SsrHitPointTexture, data.hitPointsTexture);
-                        cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SSRAccumTexture, data.lightingTexture);
+                    // Bind resources
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidTexture, data.depthTexture);
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._ColorPyramidTexture, data.colorTexture);
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SsrHitPointTexture, data.hitPointsTexture);
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SSRAccumTexture, data.lightingTexture);
 
-                        cmd.SetComputeBufferParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
+                    cmd.SetComputeBufferParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
 
-                        ConstantBuffer.Push(cmd, data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
+                    ConstantBuffer.Push(cmd, data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
 
-                        cmd.DispatchCompute(cs, data.reprojectionKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
-                    }
+                    cmd.DispatchCompute(cs, data.reprojectionKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
                 }
 
                 // Resolve

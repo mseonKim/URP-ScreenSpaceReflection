@@ -54,7 +54,7 @@ void DecodeFromNormalBuffer(float4 normalBuffer, out NormalData normalData)
 #else
     normalData.normalWS = normalBuffer.rgb;
 #endif
-    normalData.perceptualRoughness = 1.0 - normalBuffer.a;  // TODO: check if remove oneminus in deferred
+    normalData.perceptualRoughness = PerceptualSmoothnessToPerceptualRoughness(normalBuffer.a);  // Since GBuffer2 or _CameraNormalsTexture.a = smoothness, convert to roughness.
 }
 
 void DecodeFromNormalBuffer(uint2 positionSS, out NormalData normalData)
