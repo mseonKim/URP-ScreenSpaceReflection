@@ -14,7 +14,7 @@ namespace UniversalScreenSpaceReflection
         [Tooltip("Enable Screen Space Reflections.")]
         public bool enabled = true;
 
-        [Range(0.0f, 1.0f)] public float minSmoothness = 0.9f;
+        [Range(0.0f, 1.0f)] public float minSmoothness = 0.5f;
         [Range(0.0f, 1.0f)] public float smoothnessFadeStart = 0.9f;
 
         [Header("Ray Marching")]
@@ -34,7 +34,7 @@ namespace UniversalScreenSpaceReflection
         /// </summary>
         [Range(0.0f, 1.0f)] public float screenFadeDistance = 0.1f;
 
-        [Range(0, 512)] public int rayMaxIterations = 128;
+        [Range(0, 512)] public int rayMaxIterations = 256;
 
     }
 }

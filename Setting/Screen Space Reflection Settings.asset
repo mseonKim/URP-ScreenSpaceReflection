@@ -20,5 +20,5 @@ MonoBehaviour:
   smoothnessFadeStart: 0.9
   reflectSky: 1
   objectThickness: 0.01
-  screenFadeDistance: 0.5
-  rayMaxIterations: 512
+  screenFadeDistance: 0.1
+  rayMaxIterations: 256
