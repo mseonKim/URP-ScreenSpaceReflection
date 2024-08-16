@@ -1,4 +1,4 @@
-com.unity.render-pipelines.universal copyright © 2024 Unity Technologies ApS
+Universal ScreenSpaceReflection © 2024 Unity Technologies
 
 Licensed under the Unity Companion License for Unity-dependent projects--see [Unity Companion License](http://www.unity3d.com/legal/licenses/Unity_Companion_License).
 
