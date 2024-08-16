@@ -3,6 +3,9 @@
 
 This repository is ported from Unity HDRP ScreenSpace Reflection.
 
+This package is available on URP from 2022.3.0f1 (2022 LTS) version.
+The RenderGraph path for Unity6 is not ready yet.
+
 ## How To Use
 
 ![HowToUse](./Documentation~/HowToUse.png)
