@@ -1,7 +1,11 @@
-using System.Reflection;
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if SSR_RENDER_GRAPH
+using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.RenderGraphModule.Util;
+#endif
 
 namespace UniversalScreenSpaceReflection
 {
@@ -15,7 +19,7 @@ namespace UniversalScreenSpaceReflection
         public override void Create()
         {
             m_Pass = new ScreenSpaceReflectionPass();
-            m_Pass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
+            m_Pass.renderPassEvent = RenderPassEvent.AfterRenderingSkybox;
             m_Pass.Setup(settings, renderingPath);
         }
 
@@ -47,7 +51,7 @@ namespace UniversalScreenSpaceReflection
             private MipGenerator m_MipGenerator;
             private PassData m_PassData = new PassData();
             private SSRUtils.PackedMipChainInfo m_DepthBufferMipChainInfo = new SSRUtils.PackedMipChainInfo();
-            private ComputeBuffer m_DepthPyramidMipLevelOffsetsBuffer = new ComputeBuffer(15, sizeof(int) * 2);
+            private GraphicsBuffer m_DepthPyramidMipLevelOffsetsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 15, sizeof(int) * 2);
             private Material m_ResolveMat;
 
             private int m_TracingKernel;
@@ -81,7 +85,7 @@ namespace UniversalScreenSpaceReflection
                     return;
                     
                 m_PassData.settings = settings;
-                m_RenderingMode = renderingMode;
+                m_PassData.renderingMode = m_RenderingMode = renderingMode;
                 m_DepthBufferMipChainInfo.Allocate();
                 m_MipGenerator = new MipGenerator(settings.depthPyramidCS);
             }
@@ -101,6 +105,9 @@ namespace UniversalScreenSpaceReflection
                 m_LightingHandle?.Release();
             }
 
+#if UNITY_6000_0_OR_NEWER
+            [Obsolete]
+#endif
             public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
             {
                 // Enable normal texture if forward(+).
@@ -122,7 +129,7 @@ namespace UniversalScreenSpaceReflection
                 depthPyramidDesc.sRGB = false;
                 RenderingUtils.ReAllocateIfNeeded(ref m_DepthPyramidHandle, depthPyramidDesc, name:"CameraDepthBufferMipChain");
 
-                var colorPyramidDesc = new RenderTextureDescriptor(desc.width, desc.height, desc.colorFormat, 0);
+                var colorPyramidDesc = new RenderTextureDescriptor(desc.width, desc.height, desc.colorFormat, 0, 11);
                 colorPyramidDesc.enableRandomWrite = true;
                 colorPyramidDesc.useMipMap = true;
                 colorPyramidDesc.autoGenerateMips = false;
@@ -143,20 +150,23 @@ namespace UniversalScreenSpaceReflection
                 m_CopyColorKernel = m_PassData.settings.screenSpaceReflectionsCS.FindKernel("CopyColorTarget");
             }
 
+#if UNITY_6000_0_OR_NEWER
+            [Obsolete]
+#endif
             public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
             {
                 if (!ValidatePass(m_PassData))
                     return;
 
                 m_PassData.cb = new ShaderVariablesScreenSpaceReflection();
-                UpdateSSRConstantBuffer(renderingData.cameraData.camera, m_PassData.settings, ref m_PassData.cb, m_PassData.mipInfo);
+                m_PassData.mipInfo = m_DepthBufferMipChainInfo;
+                UpdateSSRConstantBuffer(renderingData.cameraData.camera, m_PassData.settings, ref m_PassData.cb, m_ColorPyramidHandle.rt.mipmapCount, m_PassData.mipInfo);
                 m_PassData.renderingMode = m_RenderingMode;
                 m_PassData.cameraColorTargetHandle = m_CameraColorTargetHandle;
                 m_PassData.depthTexture = m_DepthPyramidHandle;
                 m_PassData.colorTexture = m_ColorPyramidHandle;
                 m_PassData.hitPointsTexture = m_HitPointsHandle;
                 m_PassData.lightingTexture = m_LightingHandle;
-                m_PassData.mipInfo = m_DepthBufferMipChainInfo;
                 m_PassData.mipGenerator = m_MipGenerator;
                 m_PassData.offsetBufferData = m_DepthBufferMipChainInfo.GetOffsetBufferData(m_DepthPyramidMipLevelOffsetsBuffer);
                 m_PassData.tracingKernel = m_TracingKernel;
@@ -242,7 +252,7 @@ namespace UniversalScreenSpaceReflection
                 }
             }
 
-            private void UpdateSSRConstantBuffer(Camera camera, ScreenSpaceReflectionSettings settings, ref ShaderVariablesScreenSpaceReflection cb, SSRUtils.PackedMipChainInfo mipChainInfo)
+            private void UpdateSSRConstantBuffer(Camera camera, ScreenSpaceReflectionSettings settings, ref ShaderVariablesScreenSpaceReflection cb, int mipmapCount, SSRUtils.PackedMipChainInfo mipChainInfo)
             {
                 float n = camera.nearClipPlane;
                 float f = camera.farClipPlane;
@@ -260,7 +270,7 @@ namespace UniversalScreenSpaceReflection
                 cb._SsrRoughnessFadeRcpLength = (roughnessFadeLength != 0) ? (1.0f / roughnessFadeLength) : 0;
                 cb._SsrEdgeFadeRcpLength = Mathf.Min(1.0f / settings.screenFadeDistance, float.MaxValue);
                 // cb._ColorPyramidUvScaleAndLimitPrevFrame = SSRUtils.ComputeViewportScaleAndLimit(camera.historyRTHandleProperties.previousViewportSize, camera.historyRTHandleProperties.previousRenderTargetSize);
-                cb._SsrColorPyramidMaxMip = m_ColorPyramidHandle.rt.mipmapCount - 1;
+                cb._SsrColorPyramidMaxMip = mipmapCount - 1;
                 cb._SsrDepthPyramidMaxMip = mipChainInfo.mipLevelCount - 1;
             }
 
@@ -277,13 +287,201 @@ namespace UniversalScreenSpaceReflection
                 public RTHandle lightingTexture;
                 public SSRUtils.PackedMipChainInfo mipInfo;
                 public MipGenerator mipGenerator;
-                public ComputeBuffer offsetBufferData;
+                public GraphicsBuffer offsetBufferData;
                 public int tracingKernel;
                 public int reprojectionKernel;
                 public int copyColorKernel;
                 public Vector2Int viewportSize;
                 public Material resolveMat;
             }
+
+#if SSR_RENDER_GRAPH
+            #region RenderGraph
+            // This method adds and configures one or more render passes in the render graph.
+            // This process includes declaring their inputs and outputs,
+            // but does not include adding commands to command buffers.
+            public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameContext)
+            {
+                // Enable normal texture if forward(+).
+                if (m_RenderingMode == RenderingMode.Forward || m_RenderingMode == RenderingMode.ForwardPlus)
+                {
+                    ConfigureInput(ScriptableRenderPassInput.Normal);
+                }
+                
+                if (!ValidatePass(m_PassData))
+                    return;
+
+                var blitParameters = new RenderGraphUtils.BlitMaterialParameters();
+
+                using (var builder = renderGraph.AddComputePass<RenderGraphPassData>("ScreenSpace Reflection", out var passData))
+                {
+                    passData.settings = m_PassData.settings;
+
+                    // Get the data needed to create the list of objects to draw
+                    UniversalRenderingData renderingData = frameContext.Get<UniversalRenderingData>();
+                    UniversalCameraData cameraData = frameContext.Get<UniversalCameraData>();
+                    UniversalLightData lightData = frameContext.Get<UniversalLightData>();
+                    UniversalResourceData resourceData = frameContext.Get<UniversalResourceData>();
+
+                    builder.AllowGlobalStateModification(true);
+                    builder.UseTexture(resourceData.cameraDepthTexture, AccessFlags.Read);
+                    builder.UseTexture(resourceData.cameraColor, AccessFlags.Read);
+
+                    var desc = resourceData.cameraColor.GetDescriptor(renderGraph);
+                    var nonScaledViewport = new Vector2Int(desc.width, desc.height);
+                    m_DepthBufferMipChainInfo.ComputePackedMipChainInfo(nonScaledViewport);
+                    
+                    var depthMipchainSize = m_DepthBufferMipChainInfo.textureSize;
+                    var depthPyramidDesc = new RenderTextureDescriptor(depthMipchainSize.x, depthMipchainSize.y, RenderTextureFormat.RFloat);
+                    depthPyramidDesc.enableRandomWrite = true;
+                    depthPyramidDesc.sRGB = false;
+                    var depthPyramidHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthPyramidDesc, "CameraDepthBufferMipChain", false);
+                    builder.UseTexture(depthPyramidHandle, AccessFlags.ReadWrite);
+
+                    var colorPyramidDesc = new RenderTextureDescriptor(desc.width, desc.height, desc.colorFormat, 0, 11);
+                    colorPyramidDesc.enableRandomWrite = true;
+                    colorPyramidDesc.useMipMap = true;
+                    colorPyramidDesc.autoGenerateMips = true;
+                    var colorPyramidHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, colorPyramidDesc, "CameraColorBufferMipChain", false);
+                    builder.UseTexture(colorPyramidHandle, AccessFlags.ReadWrite);
+
+                    var hitPointsDesc = new RenderTextureDescriptor(desc.width, desc.height, colorFormat:UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16_UNorm, 0);
+                    hitPointsDesc.enableRandomWrite = true;
+                    hitPointsDesc.sRGB = false;
+                    var hitPointsHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, hitPointsDesc, "SSR_Hit_Point_Texture", false);
+                    builder.UseTexture(hitPointsHandle, AccessFlags.ReadWrite);
+
+                    var lightingDesc = new RenderTextureDescriptor(desc.width, desc.height, colorFormat:UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16B16A16_SFloat, 0);
+                    lightingDesc.enableRandomWrite = true;
+                    lightingDesc.sRGB = false;
+                    var lightingHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, lightingDesc, "SSR_Lighting_Texture", false);
+                    builder.UseTexture(lightingHandle, AccessFlags.ReadWrite);
+
+                    m_TracingKernel = passData.settings.screenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsTracing");
+                    m_ReprojectionKernel = passData.settings.screenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsReprojection");
+                    m_CopyColorKernel = passData.settings.screenSpaceReflectionsCS.FindKernel("CopyColorTarget");
+
+                    passData.cb = new ShaderVariablesScreenSpaceReflection();
+                    passData.mipInfo = m_DepthBufferMipChainInfo;
+                    UpdateSSRConstantBuffer(cameraData.camera, passData.settings, ref passData.cb, colorPyramidDesc.mipCount, passData.mipInfo);
+                    passData.renderingMode = m_RenderingMode;
+                    passData.cameraColorTargetHandle = resourceData.cameraColor;
+                    passData.depthTexture = depthPyramidHandle;
+                    passData.colorTexture = colorPyramidHandle;
+                    passData.hitPointsTexture = hitPointsHandle;
+                    passData.lightingTexture = lightingHandle;
+                    passData.mipGenerator = m_MipGenerator;
+                    passData.offsetBufferData = m_DepthBufferMipChainInfo.GetOffsetBufferData(m_DepthPyramidMipLevelOffsetsBuffer);
+                    passData.tracingKernel = m_TracingKernel;
+                    passData.reprojectionKernel = m_ReprojectionKernel;
+                    passData.copyColorKernel = m_CopyColorKernel;
+                    passData.depthVolumeDepth = depthPyramidDesc.volumeDepth;
+                    var cameraTargetDescriptor = passData.cameraColorTargetHandle.GetDescriptor(renderGraph);
+                    passData.viewportSize = new Vector2Int(cameraTargetDescriptor.width, cameraTargetDescriptor.height);
+                    passData.resolveMat = m_ResolveMat;
+
+                    var offsetBufferHandle = renderGraph.ImportBuffer(passData.offsetBufferData);
+                    builder.UseBuffer(offsetBufferHandle, AccessFlags.Read);
+                    builder.SetRenderFunc((RenderGraphPassData data, ComputeGraphContext context) => ExecutePass(context.cmd, data));
+
+                    // Use member pass data to transfer blit parameters.
+                    blitParameters.source = passData.lightingTexture;
+                    blitParameters.destination = passData.cameraColorTargetHandle;
+                    blitParameters.material = passData.resolveMat;
+                }
+
+                using (var builder = renderGraph.AddRasterRenderPass<RenderGraphPassData>("ScreenSpace Reflection", out var passData))
+                {
+                    // Resolve
+                    builder.UseTexture(blitParameters.source, AccessFlags.Read);
+                    builder.SetRenderAttachment(blitParameters.destination, 0);
+                    builder.SetRenderFunc((RenderGraphPassData data, RasterGraphContext context) =>
+                    {
+                        if (blitParameters.material != null)
+                        {
+                            Blitter.BlitTexture(context.cmd, blitParameters.source, Vector2.one, blitParameters.material, 0);
+                        }
+                    });
+                }
+            }
+
+            private static void ExecutePass(ComputeCommandBuffer cmd, RenderGraphPassData data)
+            {
+                var cs = data.settings.screenSpaceReflectionsCS;
+                if (cs == null)
+                    return;
+
+                using (new ProfilingScope(cmd, new ProfilingSampler("Depth Pyramid")))
+                {
+                    data.mipGenerator.RenderMinDepthPyramid(cmd, data.depthTexture, data.mipInfo, data.depthVolumeDepth, false);
+                }
+                
+                var deferredKeyword = new LocalKeyword(cs, "SSR_DEFERRED");
+
+                using (new ProfilingScope(cmd, new ProfilingSampler("SSR Tracing")))
+                {
+                    // Set keyword to use different normal texture based on rendering mode.
+                    cmd.SetKeyword(cs, deferredKeyword, data.renderingMode == RenderingMode.Deferred);
+
+                    cmd.SetComputeTextureParam(cs, data.tracingKernel, "_DepthPyramidTexture", data.depthTexture);
+                    cmd.SetComputeTextureParam(cs, data.tracingKernel, "_SsrHitPointTexture", data.hitPointsTexture);
+
+                    cmd.SetComputeBufferParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
+
+                    ConstantBuffer.Push(data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
+
+                    cmd.DispatchCompute(cs, data.tracingKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
+                }
+
+                using (new ProfilingScope(cmd, new ProfilingSampler("SSR Reprojection")))
+                {
+                    // Set keyword to use different normal texture based on rendering mode.
+                    cmd.SetKeyword(cs, deferredKeyword, data.renderingMode == RenderingMode.Deferred);
+
+                    // Create color mip chain
+                    cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CameraColorTexture, data.cameraColorTargetHandle);
+                    cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CopiedColorPyramidTexture, data.colorTexture);
+                    cmd.DispatchCompute(cs, data.copyColorKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
+                    
+                    // TODO: Check if the texture mip is generated automatically.
+                    // cmd.GenerateMips(data.colorTexture);
+
+                    // Bind resources
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidTexture, data.depthTexture);
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._ColorPyramidTexture, data.colorTexture);
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SsrHitPointTexture, data.hitPointsTexture);
+                    cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SSRAccumTexture, data.lightingTexture);
+
+                    cmd.SetComputeBufferParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
+
+                    ConstantBuffer.Push(data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
+
+                    cmd.DispatchCompute(cs, data.reprojectionKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
+                }
+            }
+
+            private class RenderGraphPassData
+            {
+                public ScreenSpaceReflectionSettings settings;
+                public ShaderVariablesScreenSpaceReflection cb;
+                public RenderingMode renderingMode;
+                public TextureHandle cameraColorTargetHandle;
+                public TextureHandle depthTexture;
+                public TextureHandle colorTexture;
+                public TextureHandle hitPointsTexture;
+                public TextureHandle lightingTexture;
+                public SSRUtils.PackedMipChainInfo mipInfo;
+                public MipGenerator mipGenerator;
+                public GraphicsBuffer offsetBufferData;
+                public int tracingKernel;
+                public int reprojectionKernel;
+                public int copyColorKernel;
+                public int depthVolumeDepth;
+                public Vector2Int viewportSize;
+                public Material resolveMat;
+            }
+            #endregion
+#endif
         }
     }
 }

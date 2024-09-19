@@ -87,7 +87,7 @@ namespace UniversalScreenSpaceReflection
                 m_OffsetBufferWillNeedUpdate = true;
             }
 
-            public ComputeBuffer GetOffsetBufferData(ComputeBuffer mipLevelOffsetsBuffer)
+            public GraphicsBuffer GetOffsetBufferData(GraphicsBuffer mipLevelOffsetsBuffer)
             {
                 if (m_OffsetBufferWillNeedUpdate)
                 {

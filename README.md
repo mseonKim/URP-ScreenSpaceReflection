@@ -4,7 +4,7 @@
 This repository is ported from Unity HDRP ScreenSpace Reflection.
 
 This package is available on URP from 2022.3.0f1 (2022 LTS) version.
-The RenderGraph path for Unity6 is not ready yet.
+The RenderGraph path for Unity6 is also supported.
 
 ## How To Use
 
@@ -16,6 +16,10 @@ The RenderGraph path for Unity6 is not ready yet.
 (You can create the settings asset via `Create/UniversalSSR/Settings`.)
 
     ![HowToUse_Settings](./Documentation~/HowToUse_Settings.png)
+
+NOTE) If you are using `RenderGraph` in Unity 6, add `SSR_RENDER_GRAPH` define to the `Project > Player > Script Compilation`.
+![RenderGraph Define](./Documentation~/RenderGraphDefine.png)
+
 
 
 ### In Forward(+) Rendering Mode
