@@ -60,12 +60,17 @@ namespace UniversalScreenSpaceReflection
 
             private ProfilingSampler m_ProfilingSampler = new ProfilingSampler("ScreenSpaceReflection");
 
-            private bool ValidatePass(PassData data)
+            private bool ValidatePass(PassData data, bool useRenderGraph = false)
             {
                 if (data.settings == null || !data.settings.enabled)
                     return false;
                 
-                if (data.renderingMode != RenderingMode.Deferred)
+                if (data.renderingMode == RenderingMode.Deferred)
+                {
+                    if (!useRenderGraph && Shader.GetGlobalTexture("_GBuffer2") == null)
+                        return false;
+                }
+                else
                 {
                     var isValid = Shader.GetGlobalTexture("_CameraDepthTexture") != null && Shader.GetGlobalTexture("_CameraNormalsTexture") != null;
                     if (!isValid)
@@ -308,7 +313,7 @@ namespace UniversalScreenSpaceReflection
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
                 
-                if (!ValidatePass(m_PassData))
+                if (!ValidatePass(m_PassData, true))
                     return;
 
                 var blitParameters = new RenderGraphUtils.BlitMaterialParameters();
@@ -326,6 +331,11 @@ namespace UniversalScreenSpaceReflection
                     builder.AllowGlobalStateModification(true);
                     builder.UseTexture(resourceData.cameraDepthTexture, AccessFlags.Read);
                     builder.UseTexture(resourceData.cameraColor, AccessFlags.Read);
+                    if (resourceData.gBuffer != null && resourceData.gBuffer[2].IsValid())
+                    {
+                        builder.UseTexture(resourceData.gBuffer[2], AccessFlags.Read);
+                        passData.gBuffer2 = resourceData.gBuffer[2];
+                    }
 
                     var desc = resourceData.cameraColor.GetDescriptor(renderGraph);
                     var nonScaledViewport = new Vector2Int(desc.width, desc.height);
@@ -423,6 +433,11 @@ namespace UniversalScreenSpaceReflection
                     // Set keyword to use different normal texture based on rendering mode.
                     cmd.SetKeyword(cs, deferredKeyword, data.renderingMode == RenderingMode.Deferred);
 
+                    if (data.renderingMode == RenderingMode.Deferred)
+                    {
+                        cmd.SetComputeTextureParam(cs, data.tracingKernel, "_GBuffer2", data.gBuffer2);
+                    }
+
                     cmd.SetComputeTextureParam(cs, data.tracingKernel, "_DepthPyramidTexture", data.depthTexture);
                     cmd.SetComputeTextureParam(cs, data.tracingKernel, "_SsrHitPointTexture", data.hitPointsTexture);
 
@@ -437,6 +452,11 @@ namespace UniversalScreenSpaceReflection
                 {
                     // Set keyword to use different normal texture based on rendering mode.
                     cmd.SetKeyword(cs, deferredKeyword, data.renderingMode == RenderingMode.Deferred);
+
+                    if (data.renderingMode == RenderingMode.Deferred)
+                    {
+                        cmd.SetComputeTextureParam(cs, data.reprojectionKernel, "_GBuffer2", data.gBuffer2);
+                    }
 
                     // Create color mip chain
                     cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CameraColorTexture, data.cameraColorTargetHandle);
@@ -470,6 +490,7 @@ namespace UniversalScreenSpaceReflection
                 public TextureHandle colorTexture;
                 public TextureHandle hitPointsTexture;
                 public TextureHandle lightingTexture;
+                public TextureHandle gBuffer2;
                 public SSRUtils.PackedMipChainInfo mipInfo;
                 public MipGenerator mipGenerator;
                 public GraphicsBuffer offsetBufferData;

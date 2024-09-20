@@ -6,15 +6,16 @@ This repository is ported from Unity HDRP ScreenSpace Reflection.
 This package is available on URP from 2022.3.0f1 (2022 LTS) version.
 The RenderGraph path for Unity6 is also supported.
 
-|Compatibility|2022 LTS|2023|Unity 6|
+||2022 LTS|2023|Unity 6|
 |:---:|:---:|:---:|:---:|
-|URP|O|O|O|
+|URP Compatibility|O|O|O|
+|RenderGraph Implementation|X|X|O|
 
 ## How To Use
 
 ![HowToUse](./Documentation~/HowToUse.png)
 
-1. Add `ScreenSpaceReflection` renderer feature to the `Renderer Data`.
+1. Add `ScreenSpaceReflection` renderer feature to the `Renderer Data` asset. (Disable `Native RenderPass` in this asset if visible.)
 2. Set the rendering path to your rendering mode.
 3. Link the settings asset to the renderer feature.
 (You can create the settings asset via `Create/UniversalSSR/Settings`.)
