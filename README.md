@@ -6,11 +6,15 @@ This repository is ported from Unity HDRP ScreenSpace Reflection.
 This package is available on URP from 2022.3.0f1 (2022 LTS) version.
 The RenderGraph path for Unity6 is also supported.
 
+|Compatibility|2022 LTS|2023|Unity 6|
+|:---:|:---:|:---:|:---:|
+|URP|O|O|O|
+
 ## How To Use
 
 ![HowToUse](./Documentation~/HowToUse.png)
 
-1. Add `ScreenSpaceReflection` renderer feature to Renderer data.
+1. Add `ScreenSpaceReflection` renderer feature to the `Renderer Data`.
 2. Set the rendering path to your rendering mode.
 3. Link the settings asset to the renderer feature.
 (You can create the settings asset via `Create/UniversalSSR/Settings`.)
@@ -24,7 +28,7 @@ NOTE) If you are using `RenderGraph` in Unity 6, add `SSR_RENDER_GRAPH` define t
 
 ### In Forward(+) Rendering Mode
 
-Since the URP Default Lit shader does not save the smoothness value to the normal texture in Forward Rendering, it needs to customize `DepthNormalsPass`. It also means that you need to customize all shaders that you want to draw the reflection for forward.
+Since the URP Default Lit shader does not save the smoothness value to the normal texture in Forward Rendering, we need to customize `DepthNormalsPass`. It also means that we need to customize all shaders that we want to draw the reflection for forward.
 
 However, it's pretty simple to handle this with a custom shader that stores the smoothness value into `_CameraNormalsTexture.a`.
 See the reference shader(`SSRForwardLit.shader`) in the sample project.
