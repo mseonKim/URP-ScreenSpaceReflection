@@ -349,10 +349,12 @@ namespace UniversalScreenSpaceReflection
                     builder.UseTexture(depthPyramidHandle, AccessFlags.ReadWrite);
 
                     var colorPyramidDesc = new RenderTextureDescriptor(desc.width, desc.height, desc.colorFormat, 0, 11);
-                    colorPyramidDesc.enableRandomWrite = true;
-                    colorPyramidDesc.useMipMap = true;
-                    colorPyramidDesc.autoGenerateMips = true;
-                    var colorPyramidHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, colorPyramidDesc, "CameraColorBufferMipChain", false);
+                    var colorPyramidTextureDesc = new TextureDesc(colorPyramidDesc);
+                    colorPyramidTextureDesc.enableRandomWrite = true;
+                    colorPyramidTextureDesc.useMipMap = true;
+                    colorPyramidTextureDesc.autoGenerateMips = false;
+                    colorPyramidTextureDesc.name = "CameraColorBufferMipChain";
+                    var colorPyramidHandle = renderGraph.CreateTexture(colorPyramidTextureDesc);
                     builder.UseTexture(colorPyramidHandle, AccessFlags.ReadWrite);
 
                     var hitPointsDesc = new RenderTextureDescriptor(desc.width, desc.height, colorFormat:UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16_UNorm, 0);
@@ -463,8 +465,8 @@ namespace UniversalScreenSpaceReflection
                     cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CopiedColorPyramidTexture, data.colorTexture);
                     cmd.DispatchCompute(cs, data.copyColorKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
                     
-                    // TODO: Check if the texture mip is generated automatically.
-                    // cmd.GenerateMips(data.colorTexture);
+                    RenderTexture rt = data.colorTexture;
+                    rt.GenerateMips();
 
                     // Bind resources
                     cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidTexture, data.depthTexture);
