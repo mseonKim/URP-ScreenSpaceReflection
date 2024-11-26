@@ -19,7 +19,7 @@ namespace UniversalScreenSpaceReflection
         public override void Create()
         {
             m_Pass = new ScreenSpaceReflectionPass();
-            m_Pass.renderPassEvent = RenderPassEvent.AfterRenderingSkybox;
+            m_Pass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
             m_Pass.Setup(settings, renderingPath);
         }
 
