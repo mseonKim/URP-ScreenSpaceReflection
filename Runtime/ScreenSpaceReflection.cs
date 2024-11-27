@@ -88,7 +88,7 @@ namespace UniversalScreenSpaceReflection
                 m_ResolveMat = CoreUtils.CreateEngineMaterial(Shader.Find("Hidden/SSR_Resolver"));
                 if (m_ResolveMat == null)
                     return;
-                    
+                
                 m_PassData.settings = settings;
                 m_PassData.renderingMode = m_RenderingMode = renderingMode;
                 m_DepthBufferMipChainInfo.Allocate();
@@ -120,6 +120,7 @@ namespace UniversalScreenSpaceReflection
                 {
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
+                ConfigureInput(ScriptableRenderPassInput.Color);
                 
                 if (!ValidatePass(m_PassData))
                     return;
@@ -312,6 +313,7 @@ namespace UniversalScreenSpaceReflection
                 {
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
+                ConfigureInput(ScriptableRenderPassInput.Color);
                 
                 if (!ValidatePass(m_PassData, true))
                     return;
@@ -508,5 +510,3 @@ namespace UniversalScreenSpaceReflection
         }
     }
 }
-
-
