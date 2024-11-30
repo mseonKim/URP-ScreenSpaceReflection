@@ -19,7 +19,7 @@ namespace UniversalScreenSpaceReflection
         public override void Create()
         {
             m_Pass = new ScreenSpaceReflectionPass();
-            m_Pass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
+            m_Pass.renderPassEvent = RenderPassEvent.AfterRenderingSkybox;
             m_Pass.Setup(settings, renderingPath);
         }
 
@@ -31,6 +31,10 @@ namespace UniversalScreenSpaceReflection
         // This method is called when setting up the renderer once per-camera.
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
+            // Skip if preview or reflection camera
+            if (renderingData.cameraData.cameraType == CameraType.Preview || renderingData.cameraData.cameraType == CameraType.Reflection)
+                return;
+            
             renderer.EnqueuePass(m_Pass);
         }
         
@@ -72,9 +76,11 @@ namespace UniversalScreenSpaceReflection
                 }
                 else
                 {
-                    var isValid = Shader.GetGlobalTexture("_CameraDepthTexture") != null && Shader.GetGlobalTexture("_CameraNormalsTexture") != null;
-                    if (!isValid)
-                        return false;
+                    if (Shader.GetGlobalTexture("_CameraDepthTexture") == null)
+                        Shader.SetGlobalTexture("_CameraDepthTexture", Texture2D.blackTexture);
+                    
+                    if (Shader.GetGlobalTexture("_CameraNormalsTexture") == null)
+                        Shader.SetGlobalTexture("_CameraNormalsTexture", Texture2D.blackTexture);
                 }
 
                 return true;
@@ -120,7 +126,6 @@ namespace UniversalScreenSpaceReflection
                 {
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
-                ConfigureInput(ScriptableRenderPassInput.Color);
                 
                 if (!ValidatePass(m_PassData))
                     return;
@@ -313,7 +318,6 @@ namespace UniversalScreenSpaceReflection
                 {
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
-                ConfigureInput(ScriptableRenderPassInput.Color);
                 
                 if (!ValidatePass(m_PassData, true))
                     return;
@@ -332,6 +336,7 @@ namespace UniversalScreenSpaceReflection
 
                     builder.AllowGlobalStateModification(true);
                     builder.UseTexture(resourceData.cameraDepthTexture, AccessFlags.Read);
+                    builder.UseTexture(resourceData.cameraNormalsTexture, AccessFlags.Read);
                     builder.UseTexture(resourceData.cameraColor, AccessFlags.Read);
                     if (resourceData.gBuffer != null && resourceData.gBuffer[2].IsValid())
                     {
