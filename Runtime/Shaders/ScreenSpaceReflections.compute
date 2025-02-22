@@ -2,7 +2,7 @@
 // Definitions
 //--------------------------------------------------------------------------------------------------
 
-#pragma enable_d3d11_debug_symbols
+// #pragma enable_d3d11_debug_symbols
 #pragma only_renderers d3d11 playstation xboxone xboxseries vulkan metal switch
 
 #pragma kernel ScreenSpaceReflectionsTracing                                                SSR_TRACE
@@ -116,7 +116,7 @@ void ScreenSpaceReflectionsTracing(uint3 groupId          : SV_GroupID,
     float  deviceDepth = LOAD_TEXTURE2D_X(_DepthPyramidTexture, positionSS).r;
 
     float2 positionNDC = positionSS * _ScreenSize.zw + (0.5 * _ScreenSize.zw); // Should we precompute the half-texel bias? We seem to use it a lot.
-    float3 positionWS = ComputeWorldSpacePosition(positionNDC, deviceDepth, UNITY_MATRIX_I_VP); // Jittered
+    float3 positionWS = ComputeWorldSpacePosition(positionNDC, deviceDepth, _InvCameraViewProjMatrix); // Jittered
     float3 V = GetWorldSpaceNormalizeViewDir(positionWS);
 
     float3 N;
@@ -130,7 +130,7 @@ void ScreenSpaceReflectionsTracing(uint3 groupId          : SV_GroupID,
     // Apply normal bias with the magnitude dependent on the distance from the camera.
     // Unfortunately, we only have access to the shading normal, which is less than ideal...
     positionWS = camPosWS + (positionWS - camPosWS) * (1 - 0.001 * rcp(max(dot(N, V), FLT_EPS)));
-    deviceDepth = ComputeNormalizedDeviceCoordinatesWithZ(positionWS, UNITY_MATRIX_VP).z;
+    deviceDepth = ComputeNormalizedDeviceCoordinatesWithZ(positionWS, _CameraViewProjMatrix).z;
     bool killRay = deviceDepth == UNITY_RAW_FAR_CLIP_VALUE;
 
     // Ref. #1: Michal Drobot - Quadtree Displacement Mapping with Height Blending.
@@ -142,7 +142,7 @@ void ScreenSpaceReflectionsTracing(uint3 groupId          : SV_GroupID,
     float3 rayOrigin = float3(positionSS + 0.5, deviceDepth);
 
     float3 reflPosWS  = positionWS + R;
-    float3 reflPosNDC = ComputeNormalizedDeviceCoordinatesWithZ(reflPosWS, UNITY_MATRIX_VP); // Jittered
+    float3 reflPosNDC = ComputeNormalizedDeviceCoordinatesWithZ(reflPosWS, _CameraViewProjMatrix); // Jittered
     float3 reflPosSS  = float3(reflPosNDC.xy * _ScreenSize.xy, reflPosNDC.z);
     float3 rayDir     = reflPosSS - rayOrigin;
     float3 rcpRayDir  = rcp(rayDir);
@@ -330,7 +330,7 @@ void ScreenSpaceReflectionsReprojection(uint3 dispatchThreadId : SV_DispatchThre
 
     // float  depthOrigin = LOAD_TEXTURE2D_X(_DepthPyramidTexture, positionSS0.xy).r;
 
-    // PositionInputs posInputOrigin = GetPositionInput(positionSS0.xy, _ScreenSize.zw, depthOrigin, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, uint2(8, 8));
+    // PositionInputs posInputOrigin = GetPositionInput(positionSS0.xy, _ScreenSize.zw, depthOrigin, _InvCameraViewProjMatrix, UNITY_MATRIX_V, uint2(8, 8));
     // float3 originWS = posInputOrigin.positionWS + _WorldSpaceCameraPos;
 
 #ifdef USE_MOTION_VECTOR // TODO

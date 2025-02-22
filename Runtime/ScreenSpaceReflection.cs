@@ -169,9 +169,10 @@ namespace UniversalScreenSpaceReflection
                 if (!ValidatePass(m_PassData))
                     return;
 
+                var cameraData = renderingData.cameraData;
                 m_PassData.cb = new ShaderVariablesScreenSpaceReflection();
                 m_PassData.mipInfo = m_DepthBufferMipChainInfo;
-                UpdateSSRConstantBuffer(renderingData.cameraData.camera, m_PassData.settings, ref m_PassData.cb, m_ColorPyramidHandle.rt.mipmapCount, m_PassData.mipInfo);
+                UpdateSSRConstantBuffer(renderingData.cameraData.camera, m_PassData.settings, ref m_PassData.cb, m_ColorPyramidHandle.rt.mipmapCount, m_PassData.mipInfo, cameraData.GetViewMatrix(), cameraData.GetProjectionMatrix());
                 m_PassData.renderingMode = m_RenderingMode;
                 m_PassData.cameraColorTargetHandle = m_CameraColorTargetHandle;
                 m_PassData.depthTexture = m_DepthPyramidHandle;
@@ -263,7 +264,7 @@ namespace UniversalScreenSpaceReflection
                 }
             }
 
-            private void UpdateSSRConstantBuffer(Camera camera, ScreenSpaceReflectionSettings settings, ref ShaderVariablesScreenSpaceReflection cb, int mipmapCount, SSRUtils.PackedMipChainInfo mipChainInfo)
+            private void UpdateSSRConstantBuffer(Camera camera, ScreenSpaceReflectionSettings settings, ref ShaderVariablesScreenSpaceReflection cb, int mipmapCount, SSRUtils.PackedMipChainInfo mipChainInfo, in Matrix4x4 viewMatrix, in Matrix4x4 projMatrix)
             {
                 float n = camera.nearClipPlane;
                 float f = camera.farClipPlane;
@@ -283,6 +284,10 @@ namespace UniversalScreenSpaceReflection
                 // cb._ColorPyramidUvScaleAndLimitPrevFrame = SSRUtils.ComputeViewportScaleAndLimit(camera.historyRTHandleProperties.previousViewportSize, camera.historyRTHandleProperties.previousRenderTargetSize);
                 cb._SsrColorPyramidMaxMip = mipmapCount - 1;
                 cb._SsrDepthPyramidMaxMip = mipChainInfo.mipLevelCount - 1;
+
+                var jitterMatrix = projMatrix * camera.nonJitteredProjectionMatrix.inverse;
+                cb._CameraViewProjMatrix = jitterMatrix * GL.GetGPUProjectionMatrix(projMatrix, true) * viewMatrix;
+                cb._InvCameraViewProjMatrix = cb._CameraViewProjMatrix.inverse;
             }
 
 
@@ -382,7 +387,7 @@ namespace UniversalScreenSpaceReflection
 
                     passData.cb = new ShaderVariablesScreenSpaceReflection();
                     passData.mipInfo = m_DepthBufferMipChainInfo;
-                    UpdateSSRConstantBuffer(cameraData.camera, passData.settings, ref passData.cb, colorPyramidDesc.mipCount, passData.mipInfo);
+                    UpdateSSRConstantBuffer(cameraData.camera, passData.settings, ref passData.cb, colorPyramidDesc.mipCount, passData.mipInfo, cameraData.GetViewMatrix(), cameraData.GetProjectionMatrix());
                     passData.renderingMode = m_RenderingMode;
                     passData.cameraColorTargetHandle = resourceData.cameraColor;
                     passData.depthTexture = depthPyramidHandle;
