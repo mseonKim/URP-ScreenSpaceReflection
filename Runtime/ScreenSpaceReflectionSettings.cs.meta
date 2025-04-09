@@ -3,10 +3,9 @@ guid: 30369b8245cc3f840832c23fcf73be90
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: [
-    depthPyramidCS: {fileID: 7200000, guid: f16d03b7874a24f418713cda8a6ca007, type: 3},
-    screenSpaceReflectionsCS: {fileID: 7200000, guid: f0f28b04d94cb664398e3e0cac4dc8a6, type: 3}
-  ]
+  defaultReferences:
+    - depthPyramidCS: {fileID: 7200000, guid: f16d03b7874a24f418713cda8a6ca007, type: 3}
+    - screenSpaceReflectionsCS: {fileID: 7200000, guid: f0f28b04d94cb664398e3e0cac4dc8a6, type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
