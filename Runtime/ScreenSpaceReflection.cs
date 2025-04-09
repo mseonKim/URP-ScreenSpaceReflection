@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-#if SSR_RENDER_GRAPH
+#if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.RenderGraphModule.Util;
 #endif
@@ -311,7 +311,7 @@ namespace UniversalScreenSpaceReflection
                 public Material resolveMat;
             }
 
-#if SSR_RENDER_GRAPH
+#if UNITY_6000_0_OR_NEWER
             #region RenderGraph
             // This method adds and configures one or more render passes in the render graph.
             // This process includes declaring their inputs and outputs,

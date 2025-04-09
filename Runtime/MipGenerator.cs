@@ -1,6 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
-#if SSR_RENDER_GRAPH
+#if UNITY_6000_0_OR_NEWER
 using UnityEngine.Rendering.RenderGraphModule;
 #endif
 
@@ -76,7 +76,7 @@ namespace UniversalScreenSpaceReflection
             }
         }
 
-#if SSR_RENDER_GRAPH
+#if UNITY_6000_0_OR_NEWER
         #region RenderGraph
         public void RenderMinDepthPyramid(ComputeCommandBuffer cmd, TextureHandle texture, SSRUtils.PackedMipChainInfo info, int volumeDepth, bool mip1AlreadyComputed)
         {

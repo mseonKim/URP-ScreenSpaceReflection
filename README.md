@@ -22,9 +22,6 @@ The RenderGraph path for Unity6 is also supported.
 
     ![HowToUse_Settings](./Documentation~/HowToUse_Settings.png)
 
-NOTE) If you are using `RenderGraph` in Unity 6, add `SSR_RENDER_GRAPH` define to the `Project > Player > Script Compilation`.
-![RenderGraph Define](./Documentation~/RenderGraphDefine.png)
-
 
 
 ### In Forward(+) Rendering Mode
