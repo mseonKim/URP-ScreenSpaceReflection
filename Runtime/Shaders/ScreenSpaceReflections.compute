@@ -56,7 +56,7 @@ SAMPLER(s_trilinear_clamp_sampler);
        TEXTURE2D_X(        _SsrHitPointTexture);
     RW_TEXTURE2D_X(float4, _SSRAccumTexture);
 #elif defined(SSR_COPYCOLOR)
-        TEXTURE2D_X(       _CameraColorTexture);
+        TEXTURE2D_X(       _CameraOpaqueTexture);
     RW_TEXTURE2D_X(float4, _CopiedColorPyramidTexture);
 #endif
 
@@ -383,7 +383,7 @@ void ScreenSpaceReflectionsReprojection(uint3 dispatchThreadId : SV_DispatchThre
 void CopyColorTarget(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     uint2 positionSS = dispatchThreadId.xy;
-    _CopiedColorPyramidTexture[COORD_TEXTURE2D_X(positionSS)] = LOAD_TEXTURE2D_X(_CameraColorTexture, positionSS);
+    _CopiedColorPyramidTexture[COORD_TEXTURE2D_X(positionSS)] = LOAD_TEXTURE2D_X(_CameraOpaqueTexture, positionSS);
 }
 
 #endif

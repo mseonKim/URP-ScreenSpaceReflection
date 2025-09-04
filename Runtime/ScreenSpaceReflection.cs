@@ -19,7 +19,7 @@ namespace UniversalScreenSpaceReflection
         public override void Create()
         {
             m_Pass = new ScreenSpaceReflectionPass();
-            m_Pass.renderPassEvent = RenderPassEvent.AfterRenderingSkybox;
+            m_Pass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
             m_Pass.Setup(settings, renderingPath);
         }
 
@@ -35,6 +35,7 @@ namespace UniversalScreenSpaceReflection
             if (renderingData.cameraData.cameraType == CameraType.Preview || renderingData.cameraData.cameraType == CameraType.Reflection)
                 return;
             
+            m_Pass.ConfigureInput(ScriptableRenderPassInput.Color);
             renderer.EnqueuePass(m_Pass);
         }
         
