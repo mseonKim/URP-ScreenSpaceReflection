@@ -3,7 +3,7 @@ Shader "Hidden/SSR_Resolver"
     SubShader
     {
         // No culling or depth
-        Cull Off ZWrite Off ZTest Never
+        Cull Off ZWrite Off ZTest Off
         
         Pass
         {

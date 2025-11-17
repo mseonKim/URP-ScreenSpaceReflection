@@ -23,9 +23,18 @@ namespace UniversalScreenSpaceReflection
             m_Pass.Setup(settings, renderingPath);
         }
 
+#if UNITY_6000_2_OR_NEWER
+        [Obsolete]
+#endif
         public override void SetupRenderPasses(ScriptableRenderer renderer, in RenderingData renderingData)
         {
+#if UNITY_6000_0_OR_NEWER
+    #pragma warning disable CS0618
+#endif
             m_Pass.SetCameraColorTargetHandle(renderer.cameraColorTargetHandle);
+#if UNITY_6000_0_OR_NEWER
+    #pragma warning restore CS0618
+#endif
         }
 
         // This method is called when setting up the renderer once per-camera.
@@ -35,7 +44,7 @@ namespace UniversalScreenSpaceReflection
             if (renderingData.cameraData.cameraType == CameraType.Preview || renderingData.cameraData.cameraType == CameraType.Reflection)
                 return;
             
-            m_Pass.ConfigureInput(ScriptableRenderPassInput.Color);
+            m_Pass.ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Color | ScriptableRenderPassInput.Normal);
             renderer.EnqueuePass(m_Pass);
         }
         
