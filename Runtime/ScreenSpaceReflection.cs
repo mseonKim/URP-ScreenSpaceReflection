@@ -73,6 +73,7 @@ namespace UniversalScreenSpaceReflection
             private int m_CopyColorKernel;
 
             private ProfilingSampler m_ProfilingSampler = new ProfilingSampler("ScreenSpaceReflection");
+            private static readonly float[] s_ColorPyramidSizeFactor = new float[] { 1.0f, 0.5f, 0.25f, 0.25f };
 
             private bool ValidatePass(PassData data, bool useRenderGraph = false)
             {
@@ -150,7 +151,8 @@ namespace UniversalScreenSpaceReflection
                 depthPyramidDesc.sRGB = false;
                 RenderingUtils.ReAllocateIfNeeded(ref m_DepthPyramidHandle, depthPyramidDesc, name:"CameraDepthBufferMipChain");
 
-                var colorPyramidDesc = new RenderTextureDescriptor(desc.width, desc.height, desc.colorFormat, 0, 11);
+                var colorPyramidSizeFactor = s_ColorPyramidSizeFactor[(int)UniversalRenderPipeline.asset.opaqueDownsampling];
+                var colorPyramidDesc = new RenderTextureDescriptor((int)(desc.width * colorPyramidSizeFactor), (int)(desc.height * colorPyramidSizeFactor), desc.colorFormat, 0, 11);
                 colorPyramidDesc.enableRandomWrite = true;
                 colorPyramidDesc.useMipMap = true;
                 colorPyramidDesc.autoGenerateMips = false;
@@ -370,7 +372,8 @@ namespace UniversalScreenSpaceReflection
                     var depthPyramidHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthPyramidDesc, "CameraDepthBufferMipChain", false);
                     builder.UseTexture(depthPyramidHandle, AccessFlags.ReadWrite);
 
-                    var colorPyramidDesc = new RenderTextureDescriptor(desc.width, desc.height, desc.colorFormat, 0, 11);
+                    var colorPyramidSizeFactor = s_ColorPyramidSizeFactor[(int)UniversalRenderPipeline.asset.opaqueDownsampling];
+                    var colorPyramidDesc = new RenderTextureDescriptor((int)(desc.width * colorPyramidSizeFactor), (int)(desc.height * colorPyramidSizeFactor), desc.colorFormat, 0, 11);
                     var colorPyramidTextureDesc = new TextureDesc(colorPyramidDesc);
                     colorPyramidTextureDesc.enableRandomWrite = true;
                     colorPyramidTextureDesc.useMipMap = true;
