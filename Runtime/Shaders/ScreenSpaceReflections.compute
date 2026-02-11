@@ -11,6 +11,7 @@
 
 #pragma multi_compile_local _ USE_MOTION_VECTOR   // TODO: enabled this if URP > 16.0 or exclude for performance.
 #pragma multi_compile_local _ SSR_DEFERRED
+#pragma multi_compile _ _GBUFFER_NORMALS_OCT
 
 // Tweak parameters.
 // #define DEBUG
