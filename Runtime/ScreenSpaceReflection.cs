@@ -11,17 +11,45 @@ namespace UniversalScreenSpaceReflection
 {
     public class ScreenSpaceReflection : ScriptableRendererFeature
     {
-        public ScreenSpaceReflectionSettings settings;
+        // Renderer feature now only carries fixed package resources and renderer-setup info.
+        // Per-scene/per-camera tunables live on ScreenSpaceReflectionVolume (Volume override).
+        // The .meta file's defaultReferences pre-populates these slots when a fresh feature
+        // instance is created.
+        [SerializeField] private ComputeShader depthPyramidCS;
+        [SerializeField] private ComputeShader screenSpaceReflectionsCS;
+        [SerializeField] private Shader resolveShader;
+
         public RenderingMode renderingPath;
+
         private ScreenSpaceReflectionPass m_Pass;
+        private bool m_HasLoggedMissingResources;
+        private const string k_LogPrefix = "[UniversalScreenSpaceReflection]";
 
         /// <inheritdoc/>
         public override void Create()
         {
-            m_Pass = new ScreenSpaceReflectionPass();
-            m_Pass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
-            m_Pass.Setup(settings, renderingPath);
+            if (m_Pass == null)
+            {
+                m_Pass = new ScreenSpaceReflectionPass();
+                m_Pass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
+            }
+
+            // Re-run Setup whenever resources change. Setup is idempotent: it disposes the
+            // old engine material before creating a new one and reassigns the mip generator.
+            if (depthPyramidCS != null && screenSpaceReflectionsCS != null && resolveShader != null)
+                m_Pass.Setup(depthPyramidCS, screenSpaceReflectionsCS, resolveShader, renderingPath);
         }
+
+#if UNITY_EDITOR
+        // Inspector edits to the resource slots or renderingPath need to refresh the pass.
+        // Mirrors the pattern used by URPForwardPlusVolumetricFog/FPVolumetricFog.OnValidate.
+        private void OnValidate()
+        {
+            // Reset throttled warning so a re-assigned resource produces immediate feedback.
+            m_HasLoggedMissingResources = false;
+            Create();
+        }
+#endif
 
 #if UNITY_6000_2_OR_NEWER
         [Obsolete]
@@ -41,22 +69,67 @@ namespace UniversalScreenSpaceReflection
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
             // Skip if preview or reflection camera
-            if (renderingData.cameraData.cameraType == CameraType.Preview || renderingData.cameraData.cameraType == CameraType.Reflection)
+            var cameraType = renderingData.cameraData.cameraType;
+            if (cameraType == CameraType.Preview || cameraType == CameraType.Reflection)
                 return;
-            
+
+            if (!ValidateResources())
+                return;
+
+            // No active SSR Volume override -> do not enqueue. This is the migration path:
+            // legacy projects that dropped a Settings ScriptableObject in but never added a
+            // Volume override will now render without SSR (with no per-frame error spam).
+            if (!TryResolveSettings(out var settings) || !settings.IsActiveForRendering)
+                return;
+
+            m_Pass.UpdateSettings(settings);
             m_Pass.ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Color | ScriptableRenderPassInput.Normal);
             renderer.EnqueuePass(m_Pass);
         }
-        
+
         protected override void Dispose(bool disposing)
         {
-            m_Pass.Dispose();
+            m_Pass?.Dispose();
+        }
+
+        private bool ValidateResources()
+        {
+            if (depthPyramidCS != null && screenSpaceReflectionsCS != null && resolveShader != null)
+            {
+                m_HasLoggedMissingResources = false;
+                return true;
+            }
+
+            if (!m_HasLoggedMissingResources)
+            {
+                Debug.LogWarning($"{k_LogPrefix} Missing required shader resources on {nameof(ScreenSpaceReflection)} renderer feature. " +
+                                 $"Assign 'Depth Pyramid CS', 'Screen Space Reflections CS', and 'Resolve Shader' in the renderer feature inspector.", this);
+                m_HasLoggedMissingResources = true;
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveSettings(out ScreenSpaceReflectionRuntimeSettings settings)
+        {
+            var stack = VolumeManager.instance?.stack;
+            var volume = stack?.GetComponent<ScreenSpaceReflectionVolume>();
+            if (volume != null && volume.UsesVolumeSource())
+            {
+                settings = volume.ToSettings();
+                return true;
+            }
+
+            settings = default;
+            return false;
         }
 
 
         private class ScreenSpaceReflectionPass : ScriptableRenderPass
         {
             private RenderingMode m_RenderingMode;
+            private ComputeShader m_DepthPyramidCS;
+            private ComputeShader m_ScreenSpaceReflectionsCS;
             private RTHandle m_CameraColorTargetHandle;
             private RTHandle m_DepthPyramidHandle;
             private RTHandle m_ColorPyramidHandle;
@@ -68,6 +141,8 @@ namespace UniversalScreenSpaceReflection
             private GraphicsBuffer m_DepthPyramidMipLevelOffsetsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 15, sizeof(int) * 2);
             private Material m_ResolveMat;
 
+            private ScreenSpaceReflectionRuntimeSettings m_Settings;
+
             private int m_TracingKernel;
             private int m_ReprojectionKernel;
             private int m_CopyColorKernel;
@@ -75,11 +150,14 @@ namespace UniversalScreenSpaceReflection
             private ProfilingSampler m_ProfilingSampler = new ProfilingSampler("ScreenSpaceReflection");
             private static readonly float[] s_ColorPyramidSizeFactor = new float[] { 1.0f, 0.5f, 0.25f, 0.25f };
 
-            private bool ValidatePass(PassData data, bool useRenderGraph = false)
+            private static bool ValidatePass(PassData data, bool useRenderGraph = false)
             {
-                if (data.settings == null || !data.settings.enabled)
+                if (!data.runtimeSettings.IsActiveForRendering)
                     return false;
-                
+
+                if (data.computeShader == null)
+                    return false;
+
                 if (data.renderingMode == RenderingMode.Deferred)
                 {
                     if (!useRenderGraph && Shader.GetGlobalTexture("_GBuffer2") == null)
@@ -89,7 +167,7 @@ namespace UniversalScreenSpaceReflection
                 {
                     if (Shader.GetGlobalTexture("_CameraDepthTexture") == null)
                         Shader.SetGlobalTexture("_CameraDepthTexture", Texture2D.blackTexture);
-                    
+
                     if (Shader.GetGlobalTexture("_CameraNormalsTexture") == null)
                         Shader.SetGlobalTexture("_CameraNormalsTexture", Texture2D.blackTexture);
                 }
@@ -97,19 +175,46 @@ namespace UniversalScreenSpaceReflection
                 return true;
             }
 
-            public void Setup(ScreenSpaceReflectionSettings settings, RenderingMode renderingMode)
+            /// <summary>
+            /// Called once per package load and again whenever the renderer feature inspector
+            /// changes a resource slot. Safely re-creates the engine material and mip generator.
+            /// </summary>
+            public void Setup(ComputeShader depthPyramidCS, ComputeShader ssrCS, Shader resolveShader, RenderingMode renderingMode)
             {
-                if (settings == null || settings.depthPyramidCS == null || settings.screenSpaceReflectionsCS == null)
+                if (depthPyramidCS == null || ssrCS == null || resolveShader == null)
                     return;
 
-                m_ResolveMat = CoreUtils.CreateEngineMaterial(Shader.Find("Hidden/SSR_Resolver"));
+                // Destroy any previously-created engine material so OnValidate re-Setup doesn't leak.
+                if (m_ResolveMat != null)
+                {
+                    CoreUtils.Destroy(m_ResolveMat);
+                    m_ResolveMat = null;
+                }
+
+                m_ResolveMat = CoreUtils.CreateEngineMaterial(resolveShader);
                 if (m_ResolveMat == null)
                     return;
-                
-                m_PassData.settings = settings;
-                m_PassData.renderingMode = m_RenderingMode = renderingMode;
-                m_DepthBufferMipChainInfo.Allocate();
-                m_MipGenerator = new MipGenerator(settings.depthPyramidCS);
+
+                m_DepthPyramidCS = depthPyramidCS;
+                m_ScreenSpaceReflectionsCS = ssrCS;
+                m_RenderingMode = renderingMode;
+
+                // Allocate is one-time. Re-Setup (e.g. via OnValidate) must not wipe the cached
+                // mip chain because ComputePackedMipChainInfo early-outs when the viewport size
+                // is unchanged, which would leave the freshly-zeroed offsets/sizes in place.
+                if (m_DepthBufferMipChainInfo.mipLevelOffsets == null)
+                    m_DepthBufferMipChainInfo.Allocate();
+
+                m_MipGenerator = new MipGenerator(depthPyramidCS);
+            }
+
+            /// <summary>
+            /// Called every frame from <see cref="ScreenSpaceReflection.AddRenderPasses"/> with
+            /// the resolved Volume settings for the current camera.
+            /// </summary>
+            public void UpdateSettings(in ScreenSpaceReflectionRuntimeSettings settings)
+            {
+                m_Settings = settings;
             }
 
             public void SetCameraColorTargetHandle(RTHandle colorTargetHandle)
@@ -137,14 +242,19 @@ namespace UniversalScreenSpaceReflection
                 {
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
-                
+
+                // Populate runtime fields onto m_PassData for the validation check below.
+                m_PassData.runtimeSettings = m_Settings;
+                m_PassData.renderingMode = m_RenderingMode;
+                m_PassData.computeShader = m_ScreenSpaceReflectionsCS;
+
                 if (!ValidatePass(m_PassData))
                     return;
 
                 var desc = m_CameraColorTargetHandle.rt.descriptor;
                 var nonScaledViewport = new Vector2Int(desc.width, desc.height);
                 m_DepthBufferMipChainInfo.ComputePackedMipChainInfo(nonScaledViewport);
-                
+
                 var depthMipchainSize = m_DepthBufferMipChainInfo.textureSize;
                 var depthPyramidDesc = new RenderTextureDescriptor(depthMipchainSize.x, depthMipchainSize.y, RenderTextureFormat.RFloat);
                 depthPyramidDesc.enableRandomWrite = true;
@@ -168,9 +278,9 @@ namespace UniversalScreenSpaceReflection
                 lightingDesc.sRGB = false;
                 RenderingUtils.ReAllocateIfNeeded(ref m_LightingHandle, lightingDesc, name:"SSR_Lighting_Texture");
 
-                m_TracingKernel = m_PassData.settings.screenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsTracing");
-                m_ReprojectionKernel = m_PassData.settings.screenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsReprojection");
-                m_CopyColorKernel = m_PassData.settings.screenSpaceReflectionsCS.FindKernel("CopyColorTarget");
+                m_TracingKernel = m_ScreenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsTracing");
+                m_ReprojectionKernel = m_ScreenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsReprojection");
+                m_CopyColorKernel = m_ScreenSpaceReflectionsCS.FindKernel("CopyColorTarget");
             }
 
 #if UNITY_6000_0_OR_NEWER
@@ -184,8 +294,7 @@ namespace UniversalScreenSpaceReflection
                 var cameraData = renderingData.cameraData;
                 m_PassData.cb = new ShaderVariablesScreenSpaceReflection();
                 m_PassData.mipInfo = m_DepthBufferMipChainInfo;
-                UpdateSSRConstantBuffer(renderingData.cameraData.camera, m_PassData.settings, ref m_PassData.cb, m_ColorPyramidHandle.rt.mipmapCount, m_PassData.mipInfo, cameraData.GetViewMatrix(), cameraData.GetProjectionMatrix());
-                m_PassData.renderingMode = m_RenderingMode;
+                UpdateSSRConstantBuffer(renderingData.cameraData.camera, m_Settings, ref m_PassData.cb, m_ColorPyramidHandle.rt.mipmapCount, m_PassData.mipInfo, cameraData.GetViewMatrix(), cameraData.GetProjectionMatrix());
                 m_PassData.cameraColorTargetHandle = m_CameraColorTargetHandle;
                 m_PassData.depthTexture = m_DepthPyramidHandle;
                 m_PassData.colorTexture = m_ColorPyramidHandle;
@@ -196,6 +305,7 @@ namespace UniversalScreenSpaceReflection
                 m_PassData.tracingKernel = m_TracingKernel;
                 m_PassData.reprojectionKernel = m_ReprojectionKernel;
                 m_PassData.copyColorKernel = m_CopyColorKernel;
+                m_PassData.computeShader = m_ScreenSpaceReflectionsCS;
                 var cameraTargetDescriptor = m_PassData.cameraColorTargetHandle.rt.descriptor;
                 m_PassData.viewportSize = new Vector2Int(cameraTargetDescriptor.width, cameraTargetDescriptor.height);
                 m_PassData.resolveMat = m_ResolveMat;
@@ -219,7 +329,7 @@ namespace UniversalScreenSpaceReflection
 
             private static void ExecutePass(CommandBuffer cmd, PassData data)
             {
-                var cs = data.settings.screenSpaceReflectionsCS;
+                var cs = data.computeShader;
                 if (cs == null)
                     return;
 
@@ -227,7 +337,7 @@ namespace UniversalScreenSpaceReflection
                 {
                     data.mipGenerator.RenderMinDepthPyramid(cmd, data.depthTexture, data.mipInfo, false);
                 }
-                
+
                 var deferredKeyword = new LocalKeyword(cs, "SSR_DEFERRED");
 
                 using (new ProfilingScope(cmd, new ProfilingSampler("SSR Tracing")))
@@ -276,7 +386,7 @@ namespace UniversalScreenSpaceReflection
                 }
             }
 
-            private void UpdateSSRConstantBuffer(Camera camera, ScreenSpaceReflectionSettings settings, ref ShaderVariablesScreenSpaceReflection cb, int mipmapCount, SSRUtils.PackedMipChainInfo mipChainInfo, in Matrix4x4 viewMatrix, in Matrix4x4 projMatrix)
+            private static void UpdateSSRConstantBuffer(Camera camera, in ScreenSpaceReflectionRuntimeSettings settings, ref ShaderVariablesScreenSpaceReflection cb, int mipmapCount, SSRUtils.PackedMipChainInfo mipChainInfo, in Matrix4x4 viewMatrix, in Matrix4x4 projMatrix)
             {
                 float n = camera.nearClipPlane;
                 float f = camera.farClipPlane;
@@ -305,9 +415,10 @@ namespace UniversalScreenSpaceReflection
 
             private class PassData
             {
-                public ScreenSpaceReflectionSettings settings;
+                public ScreenSpaceReflectionRuntimeSettings runtimeSettings;
                 public ShaderVariablesScreenSpaceReflection cb;
                 public RenderingMode renderingMode;
+                public ComputeShader computeShader;
                 public RTHandle cameraColorTargetHandle;
                 public RTHandle depthTexture;
                 public RTHandle colorTexture;
@@ -335,7 +446,12 @@ namespace UniversalScreenSpaceReflection
                 {
                     ConfigureInput(ScriptableRenderPassInput.Normal);
                 }
-                
+
+                // Populate the validation-side fields up-front so the early-out below sees them.
+                m_PassData.runtimeSettings = m_Settings;
+                m_PassData.renderingMode = m_RenderingMode;
+                m_PassData.computeShader = m_ScreenSpaceReflectionsCS;
+
                 if (!ValidatePass(m_PassData, true))
                     return;
 
@@ -343,7 +459,8 @@ namespace UniversalScreenSpaceReflection
 
                 using (var builder = renderGraph.AddComputePass<RenderGraphPassData>("ScreenSpace Reflection", out var passData))
                 {
-                    passData.settings = m_PassData.settings;
+                    passData.runtimeSettings = m_Settings;
+                    passData.computeShader = m_ScreenSpaceReflectionsCS;
 
                     // Get the data needed to create the list of objects to draw
                     UniversalRenderingData renderingData = frameContext.Get<UniversalRenderingData>();
@@ -364,7 +481,7 @@ namespace UniversalScreenSpaceReflection
                     var desc = resourceData.cameraColor.GetDescriptor(renderGraph);
                     var nonScaledViewport = new Vector2Int(desc.width, desc.height);
                     m_DepthBufferMipChainInfo.ComputePackedMipChainInfo(nonScaledViewport);
-                    
+
                     var depthMipchainSize = m_DepthBufferMipChainInfo.textureSize;
                     var depthPyramidDesc = new RenderTextureDescriptor(depthMipchainSize.x, depthMipchainSize.y, RenderTextureFormat.RFloat);
                     depthPyramidDesc.enableRandomWrite = true;
@@ -394,13 +511,13 @@ namespace UniversalScreenSpaceReflection
                     var lightingHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, lightingDesc, "SSR_Lighting_Texture", false);
                     builder.UseTexture(lightingHandle, AccessFlags.ReadWrite);
 
-                    m_TracingKernel = passData.settings.screenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsTracing");
-                    m_ReprojectionKernel = passData.settings.screenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsReprojection");
-                    m_CopyColorKernel = passData.settings.screenSpaceReflectionsCS.FindKernel("CopyColorTarget");
+                    m_TracingKernel = m_ScreenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsTracing");
+                    m_ReprojectionKernel = m_ScreenSpaceReflectionsCS.FindKernel("ScreenSpaceReflectionsReprojection");
+                    m_CopyColorKernel = m_ScreenSpaceReflectionsCS.FindKernel("CopyColorTarget");
 
                     passData.cb = new ShaderVariablesScreenSpaceReflection();
                     passData.mipInfo = m_DepthBufferMipChainInfo;
-                    UpdateSSRConstantBuffer(cameraData.camera, passData.settings, ref passData.cb, colorPyramidDesc.mipCount, passData.mipInfo, cameraData.GetViewMatrix(), cameraData.GetProjectionMatrix());
+                    UpdateSSRConstantBuffer(cameraData.camera, m_Settings, ref passData.cb, colorPyramidDesc.mipCount, passData.mipInfo, cameraData.GetViewMatrix(), cameraData.GetProjectionMatrix());
                     passData.renderingMode = m_RenderingMode;
                     passData.cameraColorTargetHandle = resourceData.cameraColor;
                     passData.depthTexture = depthPyramidHandle;
@@ -444,7 +561,7 @@ namespace UniversalScreenSpaceReflection
 
             private static void ExecutePass(ComputeCommandBuffer cmd, RenderGraphPassData data)
             {
-                var cs = data.settings.screenSpaceReflectionsCS;
+                var cs = data.computeShader;
                 if (cs == null)
                     return;
 
@@ -452,7 +569,7 @@ namespace UniversalScreenSpaceReflection
                 {
                     data.mipGenerator.RenderMinDepthPyramid(cmd, data.depthTexture, data.mipInfo, data.depthVolumeDepth, false);
                 }
-                
+
                 var deferredKeyword = new LocalKeyword(cs, "SSR_DEFERRED");
 
                 using (new ProfilingScope(cmd, new ProfilingSampler("SSR Tracing")))
@@ -489,7 +606,7 @@ namespace UniversalScreenSpaceReflection
                     cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CameraColorTexture, data.cameraColorTargetHandle);
                     cmd.SetComputeTextureParam(cs, data.copyColorKernel, ShaderIDs._CopiedColorPyramidTexture, data.colorTexture);
                     cmd.DispatchCompute(cs, data.copyColorKernel, SSRUtils.DivRoundUp(data.viewportSize.x, 8), SSRUtils.DivRoundUp(data.viewportSize.y, 8), 1);
-                    
+
                     RenderTexture rt = data.colorTexture;
                     rt.GenerateMips();
 
@@ -509,9 +626,10 @@ namespace UniversalScreenSpaceReflection
 
             private class RenderGraphPassData
             {
-                public ScreenSpaceReflectionSettings settings;
+                public ScreenSpaceReflectionRuntimeSettings runtimeSettings;
                 public ShaderVariablesScreenSpaceReflection cb;
                 public RenderingMode renderingMode;
+                public ComputeShader computeShader;
                 public TextureHandle cameraColorTargetHandle;
                 public TextureHandle depthTexture;
                 public TextureHandle colorTexture;

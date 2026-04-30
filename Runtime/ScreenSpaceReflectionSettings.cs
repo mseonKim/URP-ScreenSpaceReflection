@@ -1,9 +1,19 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace UniversalScreenSpaceReflection
 {
-    [CreateAssetMenu(menuName = "UniversalSSR/Settings")]
+    /// <summary>
+    /// Legacy settings ScriptableObject. Replaced by <see cref="ScreenSpaceReflectionVolume"/>
+    /// (Volume override) for tunable parameters and by inline [SerializeField] slots on the
+    /// <see cref="ScreenSpaceReflection"/> renderer feature for shader resource references.
+    /// Retained as a type so existing .asset files continue to deserialize without breaking
+    /// project-side compilation. The renderer feature no longer reads from this asset.
+    /// </summary>
+    [Obsolete("ScreenSpaceReflectionSettings is replaced by ScreenSpaceReflectionVolume (Volume override). " +
+              "Move tunable parameters into a Volume profile. ComputeShader/Shader references now live on " +
+              "the ScreenSpaceReflection renderer feature directly.")]
     public class ScreenSpaceReflectionSettings : ScriptableObject
     {
         [Header("Shaders")]

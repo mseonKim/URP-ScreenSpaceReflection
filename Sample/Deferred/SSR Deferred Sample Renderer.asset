@@ -72,7 +72,9 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 31ec43bb34e3ff542892e0b797881487, type: 3}
   m_Name: ScreenSpaceReflection
-  m_EditorClassIdentifier: 
+  m_EditorClassIdentifier:
   m_Active: 1
-  settings: {fileID: 11400000, guid: 46315cf78a9f9024fbf58a12c57c16be, type: 2}
+  depthPyramidCS: {fileID: 7200000, guid: f16d03b7874a24f418713cda8a6ca007, type: 3}
+  screenSpaceReflectionsCS: {fileID: 7200000, guid: f0f28b04d94cb664398e3e0cac4dc8a6, type: 3}
+  resolveShader: {fileID: 4800000, guid: a4489dfb62c35df4a92c3cff7cd5eca6, type: 3}
   renderingPath: 1
