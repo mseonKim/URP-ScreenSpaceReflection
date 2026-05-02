@@ -525,7 +525,6 @@ namespace UniversalScreenSpaceReflection
                     passData.hitPointsTexture = hitPointsHandle;
                     passData.lightingTexture = lightingHandle;
                     passData.mipGenerator = m_MipGenerator;
-                    passData.offsetBufferData = m_DepthBufferMipChainInfo.GetOffsetBufferData(m_DepthPyramidMipLevelOffsetsBuffer);
                     passData.tracingKernel = m_TracingKernel;
                     passData.reprojectionKernel = m_ReprojectionKernel;
                     passData.copyColorKernel = m_CopyColorKernel;
@@ -534,8 +533,16 @@ namespace UniversalScreenSpaceReflection
                     passData.viewportSize = new Vector2Int(cameraTargetDescriptor.width, cameraTargetDescriptor.height);
                     passData.resolveMat = m_ResolveMat;
 
-                    var offsetBufferHandle = renderGraph.ImportBuffer(passData.offsetBufferData);
-                    builder.UseBuffer(offsetBufferHandle, AccessFlags.Read);
+                    // Import the structured-buffer once per frame and store the BufferHandle (not
+                    // the raw GraphicsBuffer) on passData. RenderGraph validates compute resource
+                    // bindings against the registered handles; passing a raw GraphicsBuffer
+                    // captured at recording time triggers
+                    //   "Compute shader (...): Property (_DepthPyramidMipLevelOffsets) at kernel
+                    //    index (0) is not set"
+                    // even when SetComputeBufferParam was called.
+                    passData.offsetBufferHandle = renderGraph.ImportBuffer(
+                        m_DepthBufferMipChainInfo.GetOffsetBufferData(m_DepthPyramidMipLevelOffsetsBuffer));
+                    builder.UseBuffer(passData.offsetBufferHandle, AccessFlags.Read);
                     builder.SetRenderFunc((RenderGraphPassData data, ComputeGraphContext context) => ExecutePass(context.cmd, data));
 
                     // Use member pass data to transfer blit parameters.
@@ -585,7 +592,10 @@ namespace UniversalScreenSpaceReflection
                     cmd.SetComputeTextureParam(cs, data.tracingKernel, "_DepthPyramidTexture", data.depthTexture);
                     cmd.SetComputeTextureParam(cs, data.tracingKernel, "_SsrHitPointTexture", data.hitPointsTexture);
 
-                    cmd.SetComputeBufferParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
+                    // BufferHandle has implicit operator GraphicsBuffer that resolves through
+                    // RenderGraphResourceRegistry at execute time, so SetComputeBufferParam
+                    // sees the same buffer the RG validator tracks.
+                    cmd.SetComputeBufferParam(cs, data.tracingKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferHandle);
 
                     ConstantBuffer.Push(data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
 
@@ -616,7 +626,7 @@ namespace UniversalScreenSpaceReflection
                     cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SsrHitPointTexture, data.hitPointsTexture);
                     cmd.SetComputeTextureParam(cs, data.reprojectionKernel, ShaderIDs._SSRAccumTexture, data.lightingTexture);
 
-                    cmd.SetComputeBufferParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferData);
+                    cmd.SetComputeBufferParam(cs, data.reprojectionKernel, ShaderIDs._DepthPyramidMipLevelOffsets, data.offsetBufferHandle);
 
                     ConstantBuffer.Push(data.cb, cs, ShaderIDs._ShaderVariablesScreenSpaceReflection);
 
@@ -638,7 +648,7 @@ namespace UniversalScreenSpaceReflection
                 public TextureHandle gBuffer2;
                 public SSRUtils.PackedMipChainInfo mipInfo;
                 public MipGenerator mipGenerator;
-                public GraphicsBuffer offsetBufferData;
+                public BufferHandle offsetBufferHandle;
                 public int tracingKernel;
                 public int reprojectionKernel;
                 public int copyColorKernel;
