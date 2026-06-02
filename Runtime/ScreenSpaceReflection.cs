@@ -51,6 +51,7 @@ namespace UniversalScreenSpaceReflection
         }
 #endif
 
+#if !UNITY_6000_4_OR_NEWER
 #if UNITY_6000_2_OR_NEWER
         [Obsolete]
 #endif
@@ -64,6 +65,7 @@ namespace UniversalScreenSpaceReflection
     #pragma warning restore CS0618
 #endif
         }
+#endif
 
         // This method is called when setting up the renderer once per-camera.
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
@@ -232,6 +234,7 @@ namespace UniversalScreenSpaceReflection
                 m_LightingHandle?.Release();
             }
 
+#if !UNITY_6000_4_OR_NEWER
 #if UNITY_6000_0_OR_NEWER
             [Obsolete]
 #endif
@@ -321,6 +324,7 @@ namespace UniversalScreenSpaceReflection
                 context.ExecuteCommandBuffer(cmd);
                 CommandBufferPool.Release(cmd);
             }
+#endif
 
             public override void OnCameraCleanup(CommandBuffer cmd)
             {
